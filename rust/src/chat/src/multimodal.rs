@@ -573,6 +573,9 @@ mod tests {
     const LLAMA4_PATCH_ID: u32 = 200092;
     const LLAMA4_TILE_X_SEPARATOR_ID: u32 = 200093;
     const LLAMA4_TILE_Y_SEPARATOR_ID: u32 = 200094;
+    const QWEN3_5_VISION_START_ID: u32 = 248053;
+    const QWEN3_5_VISION_END_ID: u32 = 248054;
+    const QWEN3_5_IMAGE_PAD_ID: u32 = 248056;
 
     struct TestTokenizer;
 
@@ -604,6 +607,9 @@ mod tests {
                 "<|patch|>" => Some(LLAMA4_PATCH_ID),
                 "<|tile_x_separator|>" => Some(LLAMA4_TILE_X_SEPARATOR_ID),
                 "<|tile_y_separator|>" => Some(LLAMA4_TILE_Y_SEPARATOR_ID),
+                "<|vision_start|>" => Some(QWEN3_5_VISION_START_ID),
+                "<|vision_end|>" => Some(QWEN3_5_VISION_END_ID),
+                "<|image_pad|>" => Some(QWEN3_5_IMAGE_PAD_ID),
                 _ => None,
             }
         }
@@ -616,6 +622,9 @@ mod tests {
                 LLAMA4_PATCH_ID => Some("<|patch|>".to_string()),
                 LLAMA4_TILE_X_SEPARATOR_ID => Some("<|tile_x_separator|>".to_string()),
                 LLAMA4_TILE_Y_SEPARATOR_ID => Some("<|tile_y_separator|>".to_string()),
+                QWEN3_5_VISION_START_ID => Some("<|vision_start|>".to_string()),
+                QWEN3_5_VISION_END_ID => Some("<|vision_end|>".to_string()),
+                QWEN3_5_IMAGE_PAD_ID => Some("<|image_pad|>".to_string()),
                 _ => None,
             }
         }
@@ -666,6 +675,21 @@ mod tests {
             "vision_config": {"image_size": 336, "patch_size": 14}
         });
         test_info("llama4", config)
+    }
+
+    fn qwen3_5_info() -> MultimodalModelInfo {
+        let config = serde_json::json!({
+            "model_type": "qwen3_5",
+            "vision_start_token_id": QWEN3_5_VISION_START_ID,
+            "image_token_id": QWEN3_5_IMAGE_PAD_ID,
+            "vision_end_token_id": QWEN3_5_VISION_END_ID,
+            "vision_config": {
+                "patch_size": 16,
+                "merge_size": 2,
+                "temporal_patch_size": 2
+            }
+        });
+        test_info("qwen3_5", config)
     }
 
     fn llama4_single_tile_replacement() -> PromptReplacement {
@@ -738,6 +762,14 @@ mod tests {
             &ranges[0],
             &[false, true, false, true, false, false, true, false],
         );
+    }
+
+    #[test]
+    fn qwen3_5_multimodal_info_resolves() {
+        let info = qwen3_5_info();
+        assert_eq!(info.placeholder_token(), "<|image_pad|>");
+        assert_eq!(info.spec.placeholder_marker_token_id, QWEN3_5_IMAGE_PAD_ID);
+        assert_eq!(info.spec.placeholder_embed_token_id, QWEN3_5_IMAGE_PAD_ID);
     }
 
     #[test]

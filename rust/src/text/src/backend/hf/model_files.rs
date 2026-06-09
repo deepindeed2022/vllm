@@ -69,7 +69,7 @@ fn resolve_local_model_files(model_dir: &Path) -> Result<ResolvedModelFiles> {
         tokenizer,
         tokenizer_config_path,
         generation_config_path: local_file_if_exists(model_dir, "generation_config.json"),
-        preprocessor_config_path: local_file_if_exists(model_dir, "preprocessor_config.json"),
+        preprocessor_config_path: discover_processor_config_in_dir(model_dir),
         chat_template_path: discover_chat_template_in_dir(model_dir),
         config_path: local_file_if_exists(model_dir, "config.json"),
     })
@@ -106,7 +106,9 @@ async fn resolve_remote_model_files(model_id: &str) -> Result<ResolvedModelFiles
     let generation_config_path =
         download_if_present(&repo, model_id, &siblings, "generation_config.json").await?;
     let preprocessor_config_path =
-        download_if_present(&repo, model_id, &siblings, "preprocessor_config.json").await?;
+        download_if_present(&repo, model_id, &siblings, "preprocessor_config.json")
+            .await?
+            .or(download_if_present(&repo, model_id, &siblings, "processor_config.json").await?);
     let chat_template_name = siblings
         .contains("chat_template.json")
         .then_some("chat_template.json")
@@ -142,7 +144,9 @@ fn resolve_cached_model_files(model_id: &str) -> Result<Option<ResolvedModelFile
         Error::Tokenizer("resolved tokenizer file has no parent directory".to_string())
     })?;
     let generation_config_path = cache_repo.get("generation_config.json");
-    let preprocessor_config_path = cache_repo.get("preprocessor_config.json");
+    let preprocessor_config_path = cache_repo
+        .get("preprocessor_config.json")
+        .or_else(|| cache_repo.get("processor_config.json"));
     let chat_template_path = discover_chat_template_in_dir(model_dir);
     let config_path = cache_repo.get("config.json");
 
@@ -363,6 +367,11 @@ fn discover_chat_template_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
     })
 }
 
+fn discover_processor_config_in_dir(dir: &Path) -> Option<PathBuf> {
+    local_file_if_exists(dir, "preprocessor_config.json")
+        .or_else(|| local_file_if_exists(dir, "processor_config.json"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -397,6 +406,28 @@ mod tests {
         assert_eq!(
             files.tokenizer_config_path,
             Some(dir.path().join("tokenizer_config.json"))
+        );
+    }
+
+    #[tokio::test]
+    async fn resolved_model_files_falls_back_to_processor_config_for_local_models() {
+        let dir = tempdir().expect("create temp dir");
+        fs::write(dir.path().join("tokenizer.json"), "{}").expect("write tokenizer");
+        fs::write(
+            dir.path().join("tokenizer_config.json"),
+            r#"{"tokenizer_class":"PreTrainedTokenizerFast"}"#,
+        )
+        .expect("write tokenizer config");
+        fs::write(dir.path().join("config.json"), "{}").expect("write config");
+        fs::write(dir.path().join("processor_config.json"), "{}").expect("write processor config");
+
+        let files = ResolvedModelFiles::new(dir.path().to_str().expect("utf8 path"))
+            .await
+            .expect("resolve local model files");
+
+        assert_eq!(
+            files.preprocessor_config_path,
+            Some(dir.path().join("processor_config.json"))
         );
     }
 
